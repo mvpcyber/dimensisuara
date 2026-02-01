@@ -115,6 +115,56 @@ const getFileUrl = (req, folderName, filename) => {
 
 // --- ROUTES ---
 
+// 1. SETUP ADMIN ROUTE (BARU)
+// Jalankan ini di browser: http://localhost:5000/api/setup-admin
+app.get('/api/setup-admin', async (req, res) => {
+    try {
+        const username = 'admin';
+        const rawPassword = 'admin123';
+        const email = 'admin@dimensisuara.com';
+        
+        // Cek apakah tabel users ada
+        try {
+            await db.query('SELECT 1 FROM users LIMIT 1');
+        } catch (e) {
+            // Jika tabel belum ada, buat tabelnya dulu (Emergency fallback)
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(100) UNIQUE NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    role ENUM('Admin', 'User') DEFAULT 'User',
+                    full_name VARCHAR(255),
+                    contract_id INT NULL, 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+        }
+
+        const hash = await bcrypt.hash(rawPassword, 10);
+        
+        // Insert atau Update jika user admin sudah ada (Reset Password)
+        await db.query(`
+            INSERT INTO users (username, email, password_hash, role, full_name)
+            VALUES (?, ?, ?, 'Admin', 'Super Admin')
+            ON DUPLICATE KEY UPDATE password_hash = ?, role = 'Admin'
+        `, [username, email, hash, hash]);
+
+        res.json({ 
+            success: true, 
+            message: '✅ Akun Admin berhasil dibuat/direset!',
+            credentials: {
+                username: username,
+                password: rawPassword
+            }
+        });
+    } catch (err) {
+        console.error("Setup Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Health Check with Detailed Error
 app.get('/api/health-check', async (req, res) => {
     const status = {
