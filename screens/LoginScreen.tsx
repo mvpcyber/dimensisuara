@@ -13,7 +13,7 @@ export const LoginScreen: React.FC<Props> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [dbStatus, setDbStatus] = useState<{connected: boolean, message: string} | null>(null);
+  const [dbStatus, setDbStatus] = useState<{connected: boolean, message: string, debug?: any} | null>(null);
 
   useEffect(() => {
       const checkDb = async () => {
@@ -21,10 +21,12 @@ export const LoginScreen: React.FC<Props> = ({ onLogin }) => {
               const status = await checkSystemHealth();
               setDbStatus({
                   connected: status.database.connected,
-                  message: status.database.connected ? 'Database Online' : 'Database Offline'
+                  // Show the REAL error message from server, or fallback to 'Database Offline'
+                  message: status.database.message || (status.database.connected ? 'Database Online' : 'Database Offline'),
+                  debug: status.database.debug
               });
           } catch (e) {
-              setDbStatus({ connected: false, message: 'Server Unreachable' });
+              setDbStatus({ connected: false, message: 'Server Unreachable (Check Network/Logs)' });
           }
       };
       checkDb();
@@ -51,7 +53,7 @@ export const LoginScreen: React.FC<Props> = ({ onLogin }) => {
             setError(data.error || 'Login gagal.');
         }
     } catch (err) {
-        setError('Terjadi kesalahan koneksi server.');
+        setError('Terjadi kesalahan koneksi server. Pastikan backend berjalan.');
     } finally {
         setIsLoading(false);
     }
@@ -61,31 +63,44 @@ export const LoginScreen: React.FC<Props> = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-100 p-4 relative">
       
       {/* Database Status Indicator */}
-      <div className="absolute top-6 right-6 flex items-center gap-2 px-4 py-2 bg-white/90 backdrop-blur-md rounded-full shadow-sm border border-slate-100 text-xs font-bold transition-all hover:shadow-md cursor-default">
-          {dbStatus === null ? (
-              <>
-                  <Loader2 size={14} className="animate-spin text-slate-400" />
-                  <span className="text-slate-500">Checking System...</span>
-              </>
-          ) : dbStatus.connected ? (
-              <>
-                  <div className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                  </div>
-                  <span className="text-green-700 flex items-center gap-1.5">
-                      <Database size={14} /> 
-                      Online Database
-                  </span>
-              </>
-          ) : (
-              <>
-                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                  <span className="text-red-600 flex items-center gap-1.5">
-                      <Wifi size={14} className="text-red-500" />
-                      {dbStatus.message}
-                  </span>
-              </>
+      <div className={`absolute top-6 right-6 flex flex-col items-end gap-1 px-4 py-2 bg-white/90 backdrop-blur-md rounded-xl shadow-sm border text-xs font-bold transition-all hover:shadow-md cursor-default max-w-xs
+        ${dbStatus?.connected ? 'border-green-200' : 'border-red-200'}
+      `}>
+          <div className="flex items-center gap-2">
+            {dbStatus === null ? (
+                <>
+                    <Loader2 size={14} className="animate-spin text-slate-400" />
+                    <span className="text-slate-500">Checking System...</span>
+                </>
+            ) : dbStatus.connected ? (
+                <>
+                    <div className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </div>
+                    <span className="text-green-700 flex items-center gap-1.5">
+                        <Database size={14} /> 
+                        {dbStatus.message}
+                    </span>
+                </>
+            ) : (
+                <>
+                    <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></div>
+                    <span className="text-red-600 flex items-center gap-1.5 text-right leading-tight">
+                        <Wifi size={14} className="text-red-500 flex-shrink-0" />
+                        {dbStatus.message}
+                    </span>
+                </>
+            )}
+          </div>
+          
+          {/* Debug Info: Show which host/user is actually being used if connection fails */}
+          {!dbStatus?.connected && dbStatus?.debug && (
+             <div className="text-[10px] text-slate-400 font-mono mt-1 text-right border-t border-red-100 pt-1 w-full">
+                Host: {dbStatus.debug.host}<br/>
+                User: {dbStatus.debug.user}<br/>
+                DB: {dbStatus.debug.db}
+             </div>
           )}
       </div>
 

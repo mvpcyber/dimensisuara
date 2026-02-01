@@ -71,17 +71,42 @@ const upload = multer({
     limits: { fileSize: 100 * 1024 * 1024 } 
 });
 
-// --- DATABASE ---
-const dbConfig = {
-    host: process.env.DB_HOST || '127.0.0.1',
-    user: process.env.DB_USER || 'dimensi_suara_db',
-    password: process.env.DB_PASSWORD || 'Bangbens220488!',
-    database: process.env.DB_NAME || 'dimensi_suara_db',
-    waitForConnections: true,
-    connectionLimit: 10
+// --- DATABASE CONFIGURATION ---
+// Helper to safely get and trim env vars
+const getEnv = (key, def) => {
+    const val = process.env[key];
+    return val ? val.trim() : def;
 };
 
+const dbConfig = {
+    host: getEnv('DB_HOST', '127.0.0.1'),
+    user: getEnv('DB_USER', 'root'), 
+    password: getEnv('DB_PASSWORD', ''), 
+    database: getEnv('DB_NAME', 'dimensi_suara_db'),
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+};
+
+console.log("--- DB CONFIG (Sanitized) ---");
+console.log(`Host: ${dbConfig.host}`);
+console.log(`User: ${dbConfig.user}`);
+console.log(`DB:   ${dbConfig.database}`);
+console.log("-----------------------------");
+
 const db = mysql.createPool(dbConfig);
+
+// Test Database Connection on Startup
+const checkDbConnection = async () => {
+    try {
+        const connection = await db.getConnection();
+        console.log(`✅ Berhasil terhubung ke database: ${dbConfig.database}`);
+        connection.release();
+    } catch (err) {
+        console.error('❌ GAGAL KONEKSI DATABASE:', err.message);
+    }
+};
+checkDbConnection();
 
 const getFileUrl = (req, folderName, filename) => {
     if (!filename) return '';
@@ -89,6 +114,37 @@ const getFileUrl = (req, folderName, filename) => {
 };
 
 // --- ROUTES ---
+
+// Health Check with Detailed Error
+app.get('/api/health-check', async (req, res) => {
+    const status = {
+        database: { connected: false, message: 'Checking...' },
+        storage: { connected: false, message: 'Checking...' }
+    };
+    try {
+        await db.query('SELECT 1');
+        status.database = { connected: true, message: 'Online' };
+    } catch(e) { 
+        console.error("DB Check Failed:", e);
+        // Expose connection config (excluding password) if connection fails to help debug
+        status.database = { 
+            connected: false, 
+            message: `${e.code || 'Error'}: ${e.message}`,
+            debug: {
+                host: dbConfig.host,
+                user: dbConfig.user,
+                db: dbConfig.database
+            }
+        }; 
+    }
+    
+    try {
+        fs.accessSync(UPLOAD_DIRS.base, fs.constants.W_OK);
+        status.storage = { connected: true, message: 'Writable' };
+    } catch(e) { status.storage = { connected: false, message: e.message }; }
+    
+    res.json(status);
+});
 
 // Auth
 app.post('/api/auth/login', async (req, res) => {
@@ -113,7 +169,8 @@ app.post('/api/auth/login', async (req, res) => {
             user: { username: user.username, role: user.role, fullName: user.full_name } 
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Login Error:", err);
+        res.status(500).json({ error: 'Database connection failed: ' + err.message });
     }
 });
 
@@ -277,24 +334,6 @@ app.get('/api/users', async (req, res) => {
 });
 
 // --- RELEASE UPLOAD & DATA ---
-
-app.get('/api/health-check', async (req, res) => {
-    const status = {
-        database: { connected: false, message: 'Checking...' },
-        storage: { connected: false, message: 'Checking...' }
-    };
-    try {
-        await db.query('SELECT 1');
-        status.database = { connected: true, message: 'Online' };
-    } catch(e) { status.database = { connected: false, message: e.message }; }
-    
-    try {
-        fs.accessSync(UPLOAD_DIRS.base, fs.constants.W_OK);
-        status.storage = { connected: true, message: 'Writable' };
-    } catch(e) { status.storage = { connected: false, message: e.message }; }
-    
-    res.json(status);
-});
 
 app.post('/api/upload-release', upload.fields([{ name: 'coverArt', maxCount: 1 }, { name: 'audioFiles' }]), async (req, res) => {
     const connection = await db.getConnection();
